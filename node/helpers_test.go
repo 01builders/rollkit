@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"strconv"
 	"testing"
 	"time"
 
@@ -35,26 +36,26 @@ func generateSingleKey() crypto.PrivKey {
 	return key
 }
 
-func getTestConfig() config.NodeConfig {
+func getTestConfig(n int) config.NodeConfig {
+	startPort := 10000
 	return config.NodeConfig{
 		DAAddress:        MockDAAddress,
 		DANamespace:      MockDANamespace,
 		ExecutorAddress:  MockExecutorAddress,
 		SequencerAddress: MockSequencerAddress,
 		BlockManagerConfig: config.BlockManagerConfig{
-			BlockTime:        100 * time.Millisecond,
-			DABlockTime:      200 * time.Millisecond,
-			DAStartHeight:    0,
-			DAMempoolTTL:     100,
-			MaxPendingBlocks: 100,
-			LazyAggregator:   false,
+			BlockTime:     1 * time.Second,
+			LazyBlockTime: 5 * time.Second,
+		},
+		P2P: config.P2PConfig{
+			ListenAddress: "/ip4/127.0.0.1/tcp/" + strconv.Itoa(startPort+n),
 		},
 	}
 }
 
 func setupTestNodeWithCleanup(t *testing.T) (*FullNode, func()) {
 	ctx := context.Background()
-	config := getTestConfig()
+	config := getTestConfig(1)
 
 	// Generate genesis and keys
 	genesis, genesisValidatorKey := types.GetGenesisWithPrivkey(types.DefaultSigningKeyType, "test-chain")
@@ -80,7 +81,7 @@ func setupTestNodeWithCleanup(t *testing.T) (*FullNode, func()) {
 // TestHelpers verifies that helper functions work correctly
 func TestHelpers(t *testing.T) {
 	t.Run("getTestConfig returns valid config", func(t *testing.T) {
-		cfg := getTestConfig()
+		cfg := getTestConfig(1)
 		require.Equal(t, MockDAAddress, cfg.DAAddress)
 		require.Equal(t, MockDANamespace, cfg.DANamespace)
 		require.Equal(t, MockExecutorAddress, cfg.ExecutorAddress)

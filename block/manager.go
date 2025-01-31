@@ -177,6 +177,20 @@ func getInitialState(ctx context.Context, genesis *RollkitGenesis, store store.S
 	if errors.Is(err, ds.ErrNotFound) {
 		logger.Info("No state found in store, initializing new state")
 
+		// Initialize genesis block explicitly
+		err = store.SaveBlockData(ctx,
+			&types.SignedHeader{Header: types.Header{
+				BaseHeader: types.BaseHeader{
+					Height: genesis.InitialHeight,
+					Time:   uint64(genesis.GenesisTime.UnixNano()),
+				}}},
+			&types.Data{},
+			&types.Signature{},
+		)
+		if err != nil {
+			return types.State{}, fmt.Errorf("failed to save genesis block: %w", err)
+		}
+
 		// If the user is starting a fresh chain (or hard-forking), we assume the stored state is empty.
 		// TODO(tzdybal): handle max bytes
 		stateRoot, _, err := exec.InitChain(ctx, genesis.GenesisTime, genesis.InitialHeight, genesis.ChainID)
@@ -366,6 +380,12 @@ func (m *Manager) SetLastState(state types.State) {
 	m.lastStateMtx.Lock()
 	defer m.lastStateMtx.Unlock()
 	m.lastState = state
+}
+
+func (m *Manager) GetLastState() types.State {
+	m.lastStateMtx.RLock()
+	defer m.lastStateMtx.RUnlock()
+	return m.lastState
 }
 
 // GetStoreHeight returns the manager's store height
@@ -1056,7 +1076,8 @@ func (m *Manager) publishBlock(ctx context.Context) error {
 	height := m.store.Height()
 	newHeight := height + 1
 	// this is a special case, when first block is produced - there is no previous commit
-	if newHeight == uint64(m.genesis.InitialHeight) { //nolint:unconvert
+	if newHeight <= m.genesis.InitialHeight {
+		// Special handling for genesis block
 		lastSignature = &types.Signature{}
 	} else {
 		lastSignature, err = m.store.GetSignature(ctx, height)
@@ -1065,7 +1086,7 @@ func (m *Manager) publishBlock(ctx context.Context) error {
 		}
 		lastHeader, lastData, err := m.store.GetBlockData(ctx, height)
 		if err != nil {
-			return fmt.Errorf("error while loading last block at height %d: %w", height, err)
+			return fmt.Errorf("error while loading last block: %w", err)
 		}
 		lastHeaderHash = lastHeader.Hash()
 		lastDataHash = lastData.Hash()
@@ -1256,14 +1277,14 @@ func (m *Manager) sign(payload []byte) ([]byte, error) {
 
 func (m *Manager) getExtendedCommit(ctx context.Context, height uint64) (abci.ExtendedCommitInfo, error) {
 	emptyExtendedCommit := abci.ExtendedCommitInfo{}
-	if height <= uint64(m.genesis.InitialHeight) { //nolint:unconvert
-		return emptyExtendedCommit, nil
-	}
-	extendedCommit, err := m.store.GetExtendedCommit(ctx, height)
-	if err != nil {
-		return emptyExtendedCommit, err
-	}
-	return *extendedCommit, nil
+	//if !m.voteExtensionEnabled(height) || height <= uint64(m.genesis.InitialHeight) { //nolint:gosec
+	return emptyExtendedCommit, nil
+	//}
+	//extendedCommit, err := m.store.GetExtendedCommit(ctx, height)
+	//if err != nil {
+	//	return emptyExtendedCommit, err
+	//}
+	//return *extendedCommit, nil
 }
 
 func (m *Manager) recordMetrics(data *types.Data) {

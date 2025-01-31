@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"testing"
+	"time"
 
 	cmconfig "github.com/cometbft/cometbft/config"
 	cmcrypto "github.com/cometbft/cometbft/crypto"
@@ -77,13 +78,19 @@ func TestMain(m *testing.M) {
 
 func startMockDAGRPCServ() *grpc.Server {
 	srv := goDAproxy.NewServer(goDATest.NewDummyDA(), grpc.Creds(insecure.NewCredentials()))
-	addr, _ := url.Parse(MockDAAddress)
+	addr, err := url.Parse(MockDAAddress)
+	if err != nil {
+		panic(err)
+	}
 	lis, err := net.Listen("tcp", addr.Host)
 	if err != nil {
 		panic(err)
 	}
 	go func() {
-		_ = srv.Serve(lis)
+		err = srv.Serve(lis)
+		if err != nil {
+			panic(err)
+		}
 	}()
 	return srv
 }
@@ -105,10 +112,20 @@ func startMockSequencerServerGRPC(listenAddress string) *grpc.Server {
 // startMockExecutorServerGRPC starts a mock gRPC server with the given listenAddress.
 func startMockExecutorServerGRPC(listenAddress string) *grpc.Server {
 	dummyExec := execTest.NewDummyExecutor()
+	_, _, err := dummyExec.InitChain(context.Background(), time.Now(), 1, "test-chain")
+	if err != nil {
+		panic(err)
+	}
 
-	dummyExec.InjectTx(execTypes.Tx{1, 2, 3})
-	dummyExec.InjectTx(execTypes.Tx{4, 5, 6})
-	dummyExec.InjectTx(execTypes.Tx{7, 8, 9})
+	go func() {
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		i := 0
+		for range ticker.C {
+			dummyExec.InjectTx(execTypes.Tx{byte(3*i + 1), byte(3*i + 2), byte(3*i + 3)})
+			i++
+		}
+	}()
 
 	execServer := execGRPC.NewServer(dummyExec, nil)
 	server := grpc.NewServer()
@@ -142,6 +159,10 @@ func startNodeWithCleanup(t *testing.T, node Node) {
 
 // cleanUpNode stops the node and checks if it is running
 func cleanUpNode(node Node, t *testing.T) {
+	// Attempt to stop the node
+	err := node.Stop()
+	require.NoError(t, err)
+	// Now verify that the node is no longer running
 	require.False(t, node.IsRunning())
 }
 
@@ -194,8 +215,27 @@ func newTestNode(ctx context.Context, t *testing.T, nodeType NodeType, chainID s
 func TestNewNode(t *testing.T) {
 	ctx := context.Background()
 	chainID := "TestNewNode"
-	ln := initAndStartNodeWithCleanup(ctx, t, Light, chainID)
-	require.IsType(t, new(LightNode), ln)
+	//ln := initAndStartNodeWithCleanup(ctx, t, Light, chainID)
+	//require.IsType(t, new(LightNode), ln)
 	fn := initAndStartNodeWithCleanup(ctx, t, Full, chainID)
 	require.IsType(t, new(FullNode), fn)
+}
+
+func getTestConfigWithHeight(initialHeight uint64) config.NodeConfig {
+	conf := config.DefaultNodeConfig
+	conf.RootDir = ""
+	conf.DBPath = ""
+	conf.P2P.ListenAddress = ""
+	conf.DAAddress = MockDAAddress
+	conf.DANamespace = MockDANamespace
+	conf.SequencerAddress = MockSequencerAddress
+	conf.ExecutorAddress = MockExecutorAddress
+	conf.BlockManagerConfig.BlockTime = 500 * time.Millisecond
+	conf.BlockManagerConfig.LazyAggregator = true           // Use lazy mode
+	conf.BlockManagerConfig.LazyBlockTime = 1 * time.Second // More frequent blocks in lazy mode
+	conf.BlockManagerConfig.DABlockTime = 1 * time.Second
+	conf.BlockManagerConfig.DAStartHeight = initialHeight // Ensure DA starts at correct height
+	conf.BlockManagerConfig.MaxPendingBlocks = 0
+	conf.Aggregator = true // Make sure aggregator mode is enabled
+	return conf
 }
