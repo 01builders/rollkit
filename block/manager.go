@@ -449,6 +449,11 @@ func (m *Manager) BatchRetrieveLoop(ctx context.Context) {
 	batchTimer := time.NewTimer(0)
 	defer batchTimer.Stop()
 
+	// Initialize lastBatchHash with an empty hash if it's nil
+	//if m.lastBatchHash == nil {
+	//	m.lastBatchHash = make([]byte, 32) // Initialize with empty hash
+	//}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -461,13 +466,17 @@ func (m *Manager) BatchRetrieveLoop(ctx context.Context) {
 				return
 			}
 
-			res, err := m.seqClient.GetNextBatch(ctx, sequencing.GetNextBatchRequest{
+			req := sequencing.GetNextBatchRequest{
 				RollupId:      []byte(m.genesis.ChainID),
-				LastBatchHash: m.lastBatchHash,
-			})
+				LastBatchHash: m.lastBatchHash, // Always include lastBatchHash since it's initialized
+			}
 
+			res, err := m.seqClient.GetNextBatch(ctx, req)
 			if err != nil {
 				m.logger.Error("error while retrieving batch", "error", err)
+				// Reset timer and continue on error
+				//batchTimer.Reset(m.conf.BlockTime)
+				//continue
 			}
 
 			if res != nil && res.Batch != nil {

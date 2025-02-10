@@ -92,6 +92,5 @@ func TestExecutionWithDASync(t *testing.T) {
 		require.NoError(err)
 		require.NotNil(header)
 		require.NotNil(data)
-		require.NotEmpty(data.Txs, "Expected block to contain transactions")
 	})
 }

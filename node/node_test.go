@@ -2,7 +2,6 @@ package node
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"net/url"
 	"os"
@@ -190,15 +189,9 @@ func newTestNode(ctx context.Context, t *testing.T, nodeType NodeType, chainID s
 		DANamespace:      MockDANamespace,
 		ExecutorAddress:  MockExecutorAddress,
 		SequencerAddress: MockSequencerAddress,
+		Light:            nodeType == Light,
 	}
-	switch nodeType {
-	case Light:
-		config.Light = true
-	case Full:
-		config.Light = false
-	default:
-		panic(fmt.Sprintf("invalid node type: %v", nodeType))
-	}
+
 	genesis, genesisValidatorKey := types.GetGenesisWithPrivkey(types.DefaultSigningKeyType, chainID)
 	signingKey, err := types.PrivKeyToSigningKey(genesisValidatorKey)
 	if err != nil {
@@ -219,23 +212,4 @@ func TestNewNode(t *testing.T) {
 	//require.IsType(t, new(LightNode), ln)
 	fn := initAndStartNodeWithCleanup(ctx, t, Full, chainID)
 	require.IsType(t, new(FullNode), fn)
-}
-
-func getTestConfigWithHeight(initialHeight uint64) config.NodeConfig {
-	conf := config.DefaultNodeConfig
-	conf.RootDir = ""
-	conf.DBPath = ""
-	conf.P2P.ListenAddress = ""
-	conf.DAAddress = MockDAAddress
-	conf.DANamespace = MockDANamespace
-	conf.SequencerAddress = MockSequencerAddress
-	conf.ExecutorAddress = MockExecutorAddress
-	conf.BlockManagerConfig.BlockTime = 500 * time.Millisecond
-	conf.BlockManagerConfig.LazyAggregator = true           // Use lazy mode
-	conf.BlockManagerConfig.LazyBlockTime = 1 * time.Second // More frequent blocks in lazy mode
-	conf.BlockManagerConfig.DABlockTime = 1 * time.Second
-	conf.BlockManagerConfig.DAStartHeight = initialHeight // Ensure DA starts at correct height
-	conf.BlockManagerConfig.MaxPendingBlocks = 0
-	conf.Aggregator = true // Make sure aggregator mode is enabled
-	return conf
 }
